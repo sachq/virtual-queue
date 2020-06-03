@@ -22,6 +22,9 @@ contract VirtualQueue {
     bool isAvailable;
   }
 
+  // Used as Global Variable
+  uint64 ONE_ETH = 1 ether;
+
   // Manages Stores
   address manager;
 
@@ -55,7 +58,17 @@ contract VirtualQueue {
   function addProduct(string memory _productName, uint64 _productPrice) public onlyManager {
     products[totalProducts] = Product(
       _productName,
-      _productPrice * 1 ether,
+      _productPrice * ONE_ETH,
+      true
+    );
+    totalProducts += 1;
+  }
+
+  // Add new Product to the Store
+  function updateProduct(uint32 index, string memory _productName, uint64 _productPrice) public onlyManager {
+    products[index] = Product(
+      _productName,
+      _productPrice * ONE_ETH,
       true
     );
     totalProducts += 1;
