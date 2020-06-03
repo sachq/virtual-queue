@@ -4,5 +4,5 @@
 - Initializes with a Manager
 - Manager assigns Stores
 - User registers to the System.
-- System allots order in FIFO manner.
-- User is served and makes room for a User from Waiting-List.
+- System allots store queue order in FIFO.
+- User in _Active-Queue_ is served and makes room for User from _Waiting-Queue_.
