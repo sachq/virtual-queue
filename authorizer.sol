@@ -28,9 +28,8 @@ contract VirtualQueue {
   // Registered Stores by the Manager
   mapping(address => Store) public stores;
 
-  // Modifier to only Allow
-  // Managers to do Certain Actions:
-  // registerStore(), addItem(), removeItem()
+  // Actions ONLY Managers can perform:
+  // registerStore, addItem, removeItem
   modifier onlyManager() {
     require(
       manager == msg.sender,
