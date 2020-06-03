@@ -2,18 +2,24 @@
 pragma solidity >=0.4.22 <0.7.0;
 
 contract VirtualQueue {
-  // Consumer who buys an item from the Store
+  // Consumer who buys a Product from the Store
   struct Consumer {
     string name;
-    uint age;
+    uint8 age;
     bool isAuthorised;
   }
 
-  // Consumer who buys an item from the Store
+  // Consumer who buys an Product from the Store
   struct Store {
     string storeName;
-    string[] items;
     address[] activeQueue;
+    bool isActive;
+  }
+
+  struct Product {
+    string itemName;
+    uint64 price; // Save in eth
+    bool isAvailable;
   }
 
   // Manages Stores
@@ -23,10 +29,12 @@ contract VirtualQueue {
   address[] public waitingQueue;
 
   // General Store Items
-  string[] public items = ["Whisky", "Brandy", "Rum"];
+  mapping(uint32 => Product) public products;
+  uint32 totalProducts = 0;
 
   // Registered Stores by the Manager
   mapping(address => Store) public stores;
+  uint32 totalStores = 0;
 
   // Actions ONLY Managers can perform:
   // registerStore, addItem, removeItem
@@ -43,19 +51,31 @@ contract VirtualQueue {
     manager = _manager;
   }
 
-  // Add new item to the Store
-  function addItem(string memory item) public onlyManager {
-    items.push(item);
+  // Add new Product to the Store
+  function addProduct(string memory _productName, uint64 _productPrice) public onlyManager {
+    products[totalProducts] = Product(
+      _productName,
+      _productPrice * 1 ether,
+      true
+    );
+    totalProducts += 1;
   }
 
-  // Deletes item at index
-  function addItem(uint index) public onlyManager {
-    delete items[index];
+  // Deletes Product at index
+  function disabledProduct(uint32 index) public onlyManager {
+    products[index].isAvailable = false;
   }
 
   // Register new Store for Manager
-  function registerStore(address store, string memory _storeName) public onlyManager {
-    stores[store] = Store(_storeName, items, new address[](0));
+  function registerStore(address _store, string memory _storeName) public onlyManager {
+    // Do nothing if Store is Available
+    if (stores[_store].isActive) return;
+    stores[_store] = Store(
+      _storeName,
+      new address[](0),
+      true
+    );
+    totalStores += 1;
   }
 
 }
