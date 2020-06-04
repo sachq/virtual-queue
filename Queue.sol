@@ -2,16 +2,16 @@
 pragma solidity >=0.4.22 <0.7.0;
 
 contract Queue {
-	mapping(uint256 => uint32) queue;
+	mapping(uint256 => address) queue;
 	uint256 first = 1;
 	uint256 last = 0;
 
-	function enqueue(uint32 data) public {
+	function enqueue(address data) external {
 		last += 1;
 		queue[last] = data;
 	}
 
-	function dequeue() public returns (uint32 data) {
+	function dequeue() external returns (address data) {
 		require(last >= first, "Queue is Empty");
 		data = queue[first];
 		delete queue[first];

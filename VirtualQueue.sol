@@ -5,11 +5,18 @@ import { Queue } from "./Queue.sol";
 
 contract VirtualQueue {
 
+  enum Status {
+    Idle,
+    Active,
+    Waiting
+  }
+
   // Consumer who buys an Product from the Store
   struct Consumer {
-    address _address;
     uint8 _yob;
-    address _activeStore;
+    Status _status;
+    uint32 _queueNumber;
+    address _storeAddres;
     bool _isAuthorised;
   }
 
@@ -21,8 +28,13 @@ contract VirtualQueue {
     uint8 _queueLength;
     bool _isActive;
   }
+
+  // To Track all requested Users
+  mapping(address => Consumer) consumerMap;
+
   // To track _activeQueue (Queue) and Consumer
-  mapping(address => mapping(uint32 => Consumer)) storeQueueMap;
+  // (store_address => (queue_number => consumer))
+  // mapping(address => mapping(uint32 => Consumer)) storeQueueMap;
 
   struct Product {
     string _itemName;
@@ -31,15 +43,15 @@ contract VirtualQueue {
   }
 
   // Global Variables
-  uint64 ONE_ETH = 1 ether;
   uint8 MAX_QUEUE = 3;
 
   // Manages Stores
-  address manager;
+  address payable manager;
 
   // Waiting-list queue and Registered Users List
-  Consumer[] private waitingQueue;
-  Consumer[] private registeredConsumers;
+  Queue private waitingQueue;
+  mapping(uint32 => Consumer) waitingQueueMap;
+  uint8 waitingQueueLength = 0;
 
   // General Store Items
   mapping(uint32 => Product) public products;
@@ -60,7 +72,7 @@ contract VirtualQueue {
   }
 
   // Deploy with Manager's Address
-  constructor(address _manager) public {
+  constructor(address payable _manager) public {
     manager = _manager;
   }
 
@@ -68,7 +80,7 @@ contract VirtualQueue {
   function addProduct(string memory _productName, uint64 _productPrice) public onlyManager {
     products[totalProducts] = Product(
       _productName,
-      _productPrice * ONE_ETH,
+      _productPrice * 1000000000000000000,
       true
     );
     totalProducts += 1;
@@ -78,13 +90,13 @@ contract VirtualQueue {
   function updateProduct(uint32 index, string memory _productName, uint64 _productPrice) public onlyManager {
     products[index] = Product(
       _productName,
-      _productPrice * ONE_ETH,
+      _productPrice * 1000000000000000000,
       true
     );
   }
 
-  // Deletes Product at index
-  function disabledProduct(uint32 index) public onlyManager {
+  // Disable Product at Index
+  function disableProduct(uint32 index) public onlyManager {
     products[index]._isAvailable = false;
   }
 
@@ -103,9 +115,9 @@ contract VirtualQueue {
   }
 
   // Request Queue: User requests for a queue
-  function requestQueue(uint8 _yearOfBirth) public view {
-    // Check If User is already in the Waiting-Queue
-    require(canRegisterUser(msg.sender), "Already in Waiting-Queue");
+  function requestQueue(uint8 _yearOfBirth) public {
+    // Check If User is already in any Queue
+    require(canRegisterUser(msg.sender), "Already in Queue");
 
     // Check If User has minimum age of 18
     require(_yearOfBirth <= 2002, "Not Eligible");
@@ -113,28 +125,100 @@ contract VirtualQueue {
     // Check if atleast one Store is Available
     require(totalStores > 0, "No Store(s) Available to register");
 
-    // TODO: Check If User is already
-    // Condition to check if user address exist in any of the Store
+    // Register User to the appropriate Queue
+    (address shortQueueStore, uint32 queueLength) = registerToQueue();
+    if (shortQueueStore == address(0)) {
+      storeQueueMap[shortQueueStore][queueLength] = Consumer(
+        _yearOfBirth,
+        Status.Active,
+        queueLength,
+        shortQueueStore,
+        true
+      );
+    } else {
+      storeQueueMap[shortQueueStore][queueLength] = Consumer(
+        _yearOfBirth,
+        Status.Active,
+        queueLength,
+        shortQueueStore,
+        true
+      );
+    }
   }
 
-  // Finds the Store with the smallest Queue
-  function findShortestQueue() private view returns(address) {
+  // Finds the Store with the least Queue size
+  function registerToQueue() private returns(address, uint32) {
     uint32 leastQueue = 0;
     uint32 storeIndex = 0;
     for (uint32 i = 0; i < totalStores; i++) {
       if (stores[i]._queueLength <= leastQueue) {
+        leastQueue = stores[i]._queueLength;
         storeIndex = i;
       }
     }
-    return stores[storeIndex]._address;
+
+    // Move Consumer to Waiting Queue if the Queue is full
+    if (stores[storeIndex]._queueLength == MAX_QUEUE) {
+      Consumer storage consumer = consumerMap[msg.sender];
+      waitingQueue.enqueue(msg.sender);
+      waitingQueueMap[waitingQueueLength + 1] = Consumer(
+        consumer._yob,
+        Status.Waiting,
+        waitingQueueLength + 1,
+        address(0),
+        true
+      );
+      waitingQueueLength += 1;
+      // Returns Waiting Queue
+      return (address(0), waitingQueueLength);
+    }
+
+    // Queue length
+    uint32 currentLength = stores[storeIndex]._queueLength;
+
+    // Set the Queue Number as Key - Increment Queue Length by 1
+    stores[storeIndex]._queueLength += 1;
+
+    // Enqueue to Stores Active Queue
+    stores[storeIndex]._activeQueue.enqueue(msg.sender);
+
+    // Returns Store Queue
+    return (stores[storeIndex]._address, currentLength);
   }
 
+  // Buy from the alloted Store
+  // & Transfer Amount to the Manager
+  function buyProduct(uint32 productId) public payable returns(string memory, uint64) {
+    address userAddress = msg.sender;
+    Product storage product = products[productId];
+    Consumer storage consumer = consumerMap[userAddress];
+    require(consumerMap[userAddress]._isAuthorised, "User is not Authorized");
+    require(product._isAvailable, "Product is not Available");
+    require(consumerMap[userAddress]._status == Status.Active, "Not in Queue");
+    require(consumerMap[userAddress]._queueNumber == 1, "Wait for your Queue");
+    require(msg.value == product._price, "Price not met");
+
+    // Transfer AMOUNT to Manager
+    manager.transfer(msg.value);
+
+    // Reset Consumer with Default values;
+    // Reset Store Address as the consumer
+    // is not associated to any store after buying
+    consumerMap[userAddress] = Consumer(
+      consumer._yob,
+      Status.Idle,
+      0,
+      address(0), // Store address
+      consumer._isAuthorised
+    );
+
+    return (product._itemName, product._price);
+  }
+
+  // Check If Consumer Already exist in any Queue
   function canRegisterUser(address userAddress) private view returns(bool) {
-    for (uint i = 0; i < waitingQueue.length; i++) {
-      if (waitingQueue[i]._address == userAddress) return false;
-    }
-    // If not in the Waiting-Queue
-    return true;
+    if (consumerMap[userAddress]._status == Status.Idle ) return true;
+    return false;
   }
 
 }
