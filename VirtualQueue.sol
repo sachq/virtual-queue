@@ -233,8 +233,8 @@ contract VirtualQueue {
       stores[storeId]._nextInQueue = address(nextUserAddress);
     }
 
+    // Tracking Active Queue Length (Store)
     // Decrement Queue length alone
-    // (as it is the last Consumer)
     if (stores[storeId]._queueLength == 1) {
       stores[storeId]._queueLength -= 1;
     }
