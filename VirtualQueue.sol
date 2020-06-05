@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity >=0.4.22 <0.7.0;
+pragma experimental ABIEncoderV2;
 
-import { Queue } from "./Queue.sol";
+import { Queue } from './Queue.sol';
 
 contract VirtualQueue {
-
   enum Status {
     Idle,
     Active,
@@ -13,8 +13,6 @@ contract VirtualQueue {
 
   // Consumer who buys an Product from the Store
   struct Consumer {
-    string _name;
-    uint8 _yob;
     Status _status;
     address _storeAddres;
     bool _isAuthorised;
@@ -48,7 +46,7 @@ contract VirtualQueue {
   mapping(address => address) firstConsumerMap;
 
   // Waiting-list queue and Registered Users List
-  Queue private waitingQueue;
+  Queue private waitingQueue = new Queue();
   uint8 waitingQueueLength = 0;
 
   // General Store Items
@@ -70,25 +68,25 @@ contract VirtualQueue {
   }
 
   // Deploy with Manager's Address
-  constructor(address payable _manager) public {
-    manager = _manager;
+  constructor() public {
+    manager = msg.sender;
   }
 
   // Add new Product to the Store
   function addProduct(string memory _productName, uint64 _productPrice) public onlyManager {
+    totalProducts += 1;
     products[totalProducts] = Product(
       _productName,
-      _productPrice * 1000000000000000000,
+      _productPrice * 1 ether,
       true
     );
-    totalProducts += 1;
   }
 
   // Add new Product to the Store
   function updateProduct(uint32 index, string memory _productName, uint64 _productPrice) public onlyManager {
     products[index] = Product(
       _productName,
-      _productPrice * 1000000000000000000,
+      _productPrice * 1 ether,
       true
     );
   }
@@ -101,7 +99,7 @@ contract VirtualQueue {
   // Register new Store for Manager
   function registerStore(address _storeAddress, string memory _storeName) public onlyManager {
     // Do nothing if Store is Available
-    if (stores[totalStores]._isActive) return;
+    // if (stores[totalStores]._isActive) return;
     totalStores += 1;
     stores[totalStores] = Store(
       _storeAddress,
@@ -117,39 +115,38 @@ contract VirtualQueue {
     stores[index]._isActive = false;
   }
 
-  // Find the Index of the Store with shortest queue
-  function findShortestQueue() private view returns(uint32) {
-    uint32 leastQueue = 0;
-    uint32 storeIndex = 0;
-    for (uint32 i = 1; i <= totalStores; i++) {
-      if (stores[i]._queueLength <= leastQueue) {
-        leastQueue = stores[i]._queueLength;
-        storeIndex = i;
-      }
-    }
-    return storeIndex;
+  function viewConsumer() public view returns(Consumer memory) {
+    return consumerMap[msg.sender];
+  }
+
+  function totalWaiting() public view returns(uint32) {
+    return waitingQueueLength;
+  }
+
+  function firstConsumer(address store) public view returns(address) {
+    return firstConsumerMap[store];
   }
 
   // Request Queue: User requests for a queue
-  function requestQueue(string memory _name, uint8 _yearOfBirth) public {
+  function requestQueue() public returns (uint32, uint32) {
     // Check If User is already in any Queue
     require(canRegisterUser(msg.sender), "Already in Queue");
-
-    // Check If User has minimum age of 18
-    require(_yearOfBirth <= 2002, "Not Eligible");
 
     // Check atleast one Store is Available
     require(totalStores > 0, "No Store(s) Available to register");
 
     // Register User to the appropriate Queue
     // Store Active-Queue / Waiting-Queue
-    (address storeAddress, uint32 queueLength, Status status) = registerToQueue();
+    (
+      address storeAddress,
+      uint32 queueLength,
+      uint32 storeIndex,
+      Status status
+    ) = registerToQueue();
 
     // Set Consumer with Store-level data (storeAddress and queueNumber)
     // Queue number based on the Queue (Active/Waiting)
     consumerMap[msg.sender] = Consumer(
-      _name,
-      _yearOfBirth,
       status,
       storeAddress,
       true
@@ -160,10 +157,13 @@ contract VirtualQueue {
     if (status == Status.Active && queueLength == 1) {
       firstConsumerMap[storeAddress] = msg.sender;
     }
+
+    // Return Store Index and its Queue length
+    return (storeIndex, queueLength);
   }
 
   // Finds the Store with the least Queue size
-  function registerToQueue() private returns(address, uint32, Status) {
+  function registerToQueue() private returns(address, uint32, uint32, Status) {
     uint32 storeIndex = findShortestQueue(); // Find shortest queue
     Store memory store = stores[storeIndex];
 
@@ -171,15 +171,34 @@ contract VirtualQueue {
     if (store._queueLength == MAX_QUEUE) {
       waitingQueue.enqueue(msg.sender);
       waitingQueueLength += 1;
-      return (address(0), waitingQueueLength, Status.Waiting);
+      return (address(0), waitingQueueLength, storeIndex, Status.Waiting);
     }
 
-    // Enqueue to Stores Active Queue
-    store._activeQueue.enqueue(msg.sender);
-
-    // Set the Queue Number as Key - Increment Queue Length by 1
+    // Move user to Store Waiting Queue
+    stores[storeIndex]._activeQueue.enqueue(msg.sender);
     stores[storeIndex]._queueLength += 1;
-    return (store._address, stores[storeIndex]._queueLength, Status.Active);
+    return (store._address, stores[storeIndex]._queueLength, storeIndex, Status.Active);
+  }
+
+  // Find the Index of the Store with shortest queue
+  function findShortestQueue() private view returns(uint32) {
+    uint32 storeIndex = 1;
+    for (uint32 i = storeIndex; i < totalStores; i++) {
+      Store memory currentStore = stores[i];
+      // Return the store index Queue is empty
+      if (currentStore._queueLength == 0) {
+        return i;
+      } else if (stores[i + 1]._queueLength < currentStore._queueLength) {
+        storeIndex = i + 1;
+      }
+    }
+    return storeIndex;
+  }
+
+  // Check If Consumer Already exist in any Queue
+  function canRegisterUser(address userAddress) private view returns(bool) {
+    if (consumerMap[userAddress]._status == Status.Idle ) return true;
+    return false;
   }
 
   // Buy Product from the assigned Store
@@ -188,8 +207,7 @@ contract VirtualQueue {
     uint32 storeId,
     uint32 productId
   ) public
-    payable
-    returns (string memory, uint64) {
+    payable {
     address userAddress = msg.sender;
 
     Product memory product = products[productId];
@@ -199,11 +217,9 @@ contract VirtualQueue {
     require(consumer._isAuthorised, "User is not Authorized");
     require(product._isAvailable, "Product is not Available");
     require(consumer._status == Status.Active, "Not in Queue");
-    require(userAddress == firstConsumerMap[selectedStore._address], "Yet to be served");
+    require(consumer._storeAddres == selectedStore._address, "Allotted a different Store");
+    require(userAddress == firstConsumerMap[selectedStore._address], "Waiting in Queue");
     require(msg.value == product._price, "Price not met");
-
-    // Transfer AMOUNT to Manager
-    manager.transfer(msg.value);
 
     // Reset Consumer with Default values;
     // Reset Store Address as the consumer
@@ -214,14 +230,14 @@ contract VirtualQueue {
     /* Manage Waiting and Active Store Queue */
 
     // Dequeue Consumer from Active Queue Set as First Consumer
-    if (stores[storeId]._queueLength > 0) {
+    if (stores[storeId]._queueLength > 1) {
       address nextUserAddress = stores[storeId]._activeQueue.dequeue();
       stores[storeId]._queueLength -= 1;
-      firstConsumerMap[selectedStore._address] = nextUserAddress;
+      firstConsumerMap[stores[storeId]._address] = nextUserAddress;
     }
 
     // If there is waiting consumers in the Waiting Queue
-    if (waitingQueueLength > 0) {
+    if (waitingQueueLength > 1) {
       address waitingUserAddress = waitingQueue.dequeue();
       uint32 shortQueueStoreId = findShortestQueue();
       // Move last Waiting User to stores with the shortest queue
@@ -230,13 +246,10 @@ contract VirtualQueue {
       waitingQueueLength -= 1;
     }
 
-    return (product._itemName, product._price);
-  }
+    // Transfer AMOUNT to Manager
+    // manager.transfer(msg.value);
 
-  // Check If Consumer Already exist in any Queue
-  function canRegisterUser(address userAddress) private view returns(bool) {
-    if (consumerMap[userAddress]._status == Status.Idle ) return true;
-    return false;
+    // return (product._itemName, product._price);
   }
 
 }

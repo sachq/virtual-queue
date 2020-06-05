@@ -6,12 +6,12 @@ contract Queue {
 	uint256 first = 1;
 	uint256 last = 0;
 
-	function enqueue(address data) public {
+	function enqueue(address data) external {
 		last += 1;
 		queue[last] = data;
 	}
 
-	function dequeue() public returns (address data) {
+	function dequeue() external returns (address data) {
 		require(last >= first, "Queue is Empty");
 		data = queue[first];
 		delete queue[first];
