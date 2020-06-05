@@ -21,6 +21,7 @@ contract VirtualQueue {
   // Consumer who buys an Product from the Store
   struct Store {
     address _address;
+    address _nextInQueue;
     string _storeName;
     Queue _activeQueue;
     uint8 _queueLength;
@@ -43,7 +44,7 @@ contract VirtualQueue {
   address payable manager;
 
   // Store address => Consumer address - First in Queue
-  mapping(address => address) firstConsumerMap;
+  // mapping(address => address) firstConsumerMap;
 
   // Waiting-list queue and Registered Users List
   Queue private waitingQueue = new Queue();
@@ -103,6 +104,7 @@ contract VirtualQueue {
     totalStores += 1;
     stores[totalStores] = Store(
       _storeAddress,
+      address(0),
       _storeName,
       new Queue(),
       0,
@@ -121,10 +123,6 @@ contract VirtualQueue {
 
   function totalWaiting() public view returns(uint32) {
     return waitingQueueLength;
-  }
-
-  function firstConsumer(address store) public view returns(address) {
-    return firstConsumerMap[store];
   }
 
   // Request Queue: User requests for a queue
@@ -155,7 +153,8 @@ contract VirtualQueue {
     // Set Consumer Address as First In Queue
     // for a Store if QueueLength is Only 1
     if (status == Status.Active && queueLength == 1) {
-      firstConsumerMap[storeAddress] = msg.sender;
+      stores[storeIndex]._nextInQueue = msg.sender;
+      stores[storeIndex]._activeQueue.dequeue();
     }
 
     // Return Store Index and its Queue length
@@ -218,7 +217,7 @@ contract VirtualQueue {
     require(product._isAvailable, "Product is not Available");
     require(consumer._status == Status.Active, "Not in Queue");
     require(consumer._storeAddres == selectedStore._address, "Allotted a different Store");
-    require(userAddress == firstConsumerMap[selectedStore._address], "Waiting in Queue");
+    require(userAddress == stores[storeId]._nextInQueue, "Waiting in Queue");
     require(msg.value == product._price, "Price not met");
 
     // Reset Consumer with Default values;
@@ -227,17 +226,15 @@ contract VirtualQueue {
     consumerMap[userAddress]._status = Status.Idle;
     consumerMap[userAddress]._storeAddres = address(0);
 
-    /* Manage Waiting and Active Store Queue */
-
     // Dequeue Consumer from Active Queue Set as First Consumer
     if (stores[storeId]._queueLength > 1) {
       address nextUserAddress = stores[storeId]._activeQueue.dequeue();
       stores[storeId]._queueLength -= 1;
-      firstConsumerMap[stores[storeId]._address] = nextUserAddress;
+      stores[storeId]._nextInQueue = address(nextUserAddress);
     }
 
     // If there is waiting consumers in the Waiting Queue
-    if (waitingQueueLength > 1) {
+    if (waitingQueueLength >= 1) {
       address waitingUserAddress = waitingQueue.dequeue();
       uint32 shortQueueStoreId = findShortestQueue();
       // Move last Waiting User to stores with the shortest queue
@@ -247,9 +244,7 @@ contract VirtualQueue {
     }
 
     // Transfer AMOUNT to Manager
-    // manager.transfer(msg.value);
-
-    // return (product._itemName, product._price);
+    manager.transfer(msg.value);
   }
 
 }
