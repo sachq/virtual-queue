@@ -233,12 +233,20 @@ contract VirtualQueue {
       stores[storeId]._nextInQueue = address(nextUserAddress);
     }
 
+    // Decrement Queue length alone
+    // (as it is the last Consumer)
+    if (stores[storeId]._queueLength == 1) {
+      stores[storeId]._queueLength -= 1;
+    }
+
     // If there is waiting consumers in the Waiting Queue
     if (waitingQueueLength >= 1) {
       address waitingUserAddress = waitingQueue.dequeue();
       uint32 shortQueueStoreId = findShortestQueue();
       // Move last Waiting User to stores with the shortest queue
       stores[shortQueueStoreId]._activeQueue.enqueue(waitingUserAddress);
+      consumerMap[waitingUserAddress]._storeAddres = stores[shortQueueStoreId]._address;
+      consumerMap[waitingUserAddress]._status = Status.Active;
       stores[shortQueueStoreId]._queueLength += 1;
       waitingQueueLength -= 1;
     }
