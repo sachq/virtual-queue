@@ -226,17 +226,17 @@ contract VirtualQueue {
     consumerMap[userAddress]._status = Status.Idle;
     consumerMap[userAddress]._storeAddres = address(0);
 
+    // Tracking Active Queue Length (Store)
+    // Decrement Queue length alone
+    if (stores[storeId]._queueLength == 1) {
+      stores[storeId]._queueLength -= 1;
+    }
+
     // Dequeue Consumer from Active Queue Set as First Consumer
     if (stores[storeId]._queueLength > 1) {
       address nextUserAddress = stores[storeId]._activeQueue.dequeue();
       stores[storeId]._queueLength -= 1;
       stores[storeId]._nextInQueue = address(nextUserAddress);
-    }
-
-    // Tracking Active Queue Length (Store)
-    // Decrement Queue length alone
-    if (stores[storeId]._queueLength == 1) {
-      stores[storeId]._queueLength -= 1;
     }
 
     // If there is waiting consumers in the Waiting Queue
